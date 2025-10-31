@@ -26,7 +26,7 @@
                         }
                     },
                     "method": "post",
-                    "body": "// Custom KQL query - replace with your actual query\nHeartbeat\n| where TimeGenerated >= ago(24h)\n| summarize count() by Computer, bin(TimeGenerated, 1h)\n| order by TimeGenerated desc\n",
+                    "body": "ApiManagementGatewayLogs \n| join ApiManagementGatewayLlmLog on CorrelationId\n| where SequenceNumber == 0 and IsRequestSuccess == true\n| mv-expand TraceRecords\n| extend messageRaw = tostring(TraceRecords[\"message\"])\n| extend clientID = trim(\"ClientID:\", messageRaw)\n| project TimeGenerated, clientID, Region, CallerIpAddress, Cache, ProductId, BackendId, PromptTokens, CompletionTokens, TotalTokens, ModelName\n",
                     "path": "/queryData",
                     "queries": {
                         "subscriptions": "@parameters('subscriptionId')",
