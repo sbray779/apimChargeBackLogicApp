@@ -9,6 +9,56 @@ This repository contains the ARM templates and Logic App workflows to deploy a s
 
 ## Architecture
 
+### Data Flow Diagram
+
+```mermaid
+flowchart TD
+    A[API Management Instance] -->|Diagnostic Settings| B[Log Analytics Workspace]
+    B -->|ApiManagementGatewayLogs<br/>ApiManagementGatewayLlmLog| C[Logic App Workflow]
+    C -->|KQL Query| B
+    C -->|Token Usage Data| D[CSV Processing]
+    D -->|Converted Report| E[Storage Account<br/>Blob Container]
+    
+    subgraph "API Management"
+        A1[Gateway Logging]
+        A2[LLM Gateway Logging]
+        A3[Token Tracking]
+    end
+    
+    subgraph "Logic App Processing"
+        C1[Scheduled Trigger]
+        C2[Query Execution]
+        C3[Data Transformation]
+        C4[CSV Generation]
+    end
+    
+    subgraph "Data Storage"
+        E1[reports Container]
+        E2[CSV Files]
+        E3[Managed Identity Auth]
+    end
+    
+    A --> A1
+    A1 --> A2
+    A2 --> A3
+    
+    C --> C1
+    C1 --> C2
+    C2 --> C3
+    C3 --> C4
+    
+    E --> E1
+    E1 --> E2
+    E2 --> E3
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style E fill:#fff3e0
+```
+
+### Solution Components
+
 The solution includes:
 - **Logic App (Standard)**: Workflow engine hosted on an existing App Service Plan
 - **Log Analytics Workspace**: For querying and analyzing API Management gateway logs
