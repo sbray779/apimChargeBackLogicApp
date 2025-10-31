@@ -1,0 +1,119 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "parameters": {
+            "logAnalyticsWorkspaceName": {
+                "type": "string",
+                "defaultValue": "@appsetting('LogAnalytics_WorkspaceName')"
+            },
+            "resourceGroupName": {
+                "type": "string",
+                "defaultValue": "[resourceGroup().name]"
+            },
+            "subscriptionId": {
+                "type": "string",
+                "defaultValue": "[subscription().subscriptionId]"
+            }
+        },
+        "actions": {
+            "Run_query_and_list_results": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "referenceName": "azuremonitorlogs"
+                        }
+                    },
+                    "method": "post",
+                    "body": "// Custom KQL query - replace with your actual query\nHeartbeat\n| where TimeGenerated >= ago(24h)\n| summarize count() by Computer, bin(TimeGenerated, 1h)\n| order by TimeGenerated desc\n",
+                    "path": "/queryData",
+                    "queries": {
+                        "subscriptions": "@parameters('subscriptionId')",
+                        "resourcegroups": "@parameters('resourceGroupName')",
+                        "resourcetype": "Log Analytics Workspace",
+                        "resourcename": "@parameters('logAnalyticsWorkspaceName')",
+                        "timerange": "Last 24 hours"
+                    }
+                },
+                "runAfter": {}
+            },
+            "Create_CSV_table": {
+                "type": "Table",
+                "inputs": {
+                    "from": "@body('Run_query_and_list_results')?['value']",
+                    "format": "CSV"
+                },
+                "runAfter": {
+                    "Run_query_and_list_results": [
+                        "SUCCEEDED"
+                    ]
+                }
+            },
+            "Create_blob_(V2)": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "referenceName": "azureblob"
+                        }
+                    },
+                    "method": "post",
+                    "body": "@body('Create_CSV_table')",
+                    "headers": {
+                        "ReadFileMetadataFromServer": true
+                    },
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('blobStorageEndpoint')))}/files",
+                    "queries": {
+                        "folderPath": "/workflow-data",
+                        "name": "query-results_@{utcNow('yyyy-MM-dd-HHmm')}.csv",
+                        "queryParametersSingleEncoded": true
+                    }
+                },
+                "runAfter": {
+                    "Create_CSV_table": [
+                        "SUCCEEDED"
+                    ]
+                },
+                "runtimeConfiguration": {
+                    "contentTransfer": {
+                        "transferMode": "Chunked"
+                    }
+                }
+            },
+            "Send_notification_on_success": {
+                "type": "Compose",
+                "inputs": {
+                    "message": "Workflow completed successfully",
+                    "timestamp": "@utcNow()",
+                    "recordsProcessed": "@length(body('Run_query_and_list_results')?['value'])",
+                    "blobName": "query-results_@{utcNow('yyyy-MM-dd-HHmm')}.csv"
+                },
+                "runAfter": {
+                    "Create_blob_(V2)": [
+                        "SUCCEEDED"
+                    ]
+                }
+            }
+        },
+        "outputs": {
+            "workflowResult": {
+                "type": "Object",
+                "value": "@body('Send_notification_on_success')"
+            }
+        },
+        "triggers": {
+            "Recurrence": {
+                "type": "Recurrence",
+                "description": "Schedule to run data export daily",
+                "recurrence": {
+                    "interval": 1,
+                    "frequency": "Day",
+                    "timeZone": "UTC",
+                    "startTime": "@{utcNow()}"
+                }
+            }
+        }
+    },
+    "kind": "Stateful"
+}

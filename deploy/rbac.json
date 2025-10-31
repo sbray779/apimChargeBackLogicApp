@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Role assignments for Logic App Managed Identity to access Log Analytics and Storage"
+  },
+  "parameters": {
+    "logicAppPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Principal ID of the Logic App's managed identity"
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the storage account"
+      }
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Log Analytics workspace"
+      }
+    }
+  },
+  "variables": {
+    "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+    "logAnalyticsReaderRoleId": "73c42c96-874c-492b-b04d-ab87d138a893"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('logicAppPrincipalId'), variables('storageBlobDataContributorRoleId'))]",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataContributorRoleId'))]",
+        "principalId": "[parameters('logicAppPrincipalId')]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName')), parameters('logicAppPrincipalId'), variables('logAnalyticsReaderRoleId'))]",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('logAnalyticsReaderRoleId'))]",
+        "principalId": "[parameters('logicAppPrincipalId')]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ],
+  "outputs": {
+    "storageRoleAssignmentId": {
+      "type": "string",
+      "value": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('logicAppPrincipalId'), variables('storageBlobDataContributorRoleId'))]"
+    },
+    "logAnalyticsRoleAssignmentId": {
+      "type": "string",
+      "value": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName')), parameters('logicAppPrincipalId'), variables('logAnalyticsReaderRoleId'))]"
+    }
+  }
+}

@@ -1,0 +1,162 @@
+name: Deploy Logic App Workflow
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  AZURE_WEBAPP_NAME: logicapp-workflow
+  AZURE_WEBAPP_PACKAGE_PATH: './workflow'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Validate ARM Template
+      uses: azure/arm-deploy@v1
+      with:
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        resourceGroupName: ${{ secrets.AZURE_RG }}
+        template: ./deploy/azuredeploy.json
+        parameters: ./deploy/azuredeploy.parameters.json
+        deploymentMode: Validate
+
+  deploy-infrastructure:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: 
+      name: ${{ github.event.inputs.environment || 'dev' }}
+    
+    outputs:
+      logicAppName: ${{ steps.deployment.outputs.logicAppName }}
+      principalId: ${{ steps.deployment.outputs.logicAppPrincipalId }}
+      storageAccountName: ${{ steps.deployment.outputs.storageAccountName }}
+      logAnalyticsWorkspaceName: ${{ steps.deployment.outputs.logAnalyticsWorkspaceName }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Deploy ARM Template
+      id: deployment
+      uses: azure/arm-deploy@v1
+      with:
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        resourceGroupName: ${{ secrets.AZURE_RG }}
+        template: ./deploy/azuredeploy.json
+        parameters: ./deploy/azuredeploy.parameters.json
+        deploymentName: 'logicapp-${{ github.run_number }}'
+
+  deploy-rbac:
+    needs: deploy-infrastructure
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: 
+      name: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Deploy RBAC Template
+      uses: azure/arm-deploy@v1
+      with:
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        resourceGroupName: ${{ secrets.AZURE_RG }}
+        template: ./deploy/rbac.json
+        parameters: |
+          logicAppPrincipalId=${{ needs.deploy-infrastructure.outputs.principalId }}
+          storageAccountName=${{ needs.deploy-infrastructure.outputs.storageAccountName }}
+          logAnalyticsWorkspaceName=${{ needs.deploy-infrastructure.outputs.logAnalyticsWorkspaceName }}
+        deploymentName: 'rbac-${{ github.run_number }}'
+
+  deploy-workflow:
+    needs: [deploy-infrastructure, deploy-rbac]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: 
+      name: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install Azure Functions Core Tools
+      run: npm install -g azure-functions-core-tools@4 --unsafe-perm true
+    
+    - name: Prepare workflow files
+      run: |
+        # Update connection references with actual values
+        sed -i "s/{subscription-id}/${{ secrets.AZURE_SUBSCRIPTION_ID }}/g" workflow/connections.json
+        sed -i "s/{resource-group}/${{ secrets.AZURE_RG }}/g" workflow/connections.json
+        sed -i "s/{location}/${{ vars.AZURE_LOCATION || 'eastus' }}/g" workflow/connections.json
+    
+    - name: Deploy to Logic App
+      run: |
+        func azure functionapp publish ${{ needs.deploy-infrastructure.outputs.logicAppName }} --force
+      working-directory: ./workflow
+
+  test-workflow:
+    needs: [deploy-workflow, deploy-infrastructure]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: 
+      name: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Test Logic App Workflow
+      run: |
+        # Trigger the workflow manually to test
+        az logicapp workflow start \
+          --resource-group ${{ secrets.AZURE_RG }} \
+          --name ${{ needs.deploy-infrastructure.outputs.logicAppName }} \
+          --workflow-name workflow
+        
+        # Wait for completion and check status
+        sleep 30
+        
+        # Get run status (this would need to be enhanced for proper testing)
+        echo "Workflow triggered successfully. Check Azure portal for run details."

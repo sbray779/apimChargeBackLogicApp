@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "value": "my-logicapp-workflow"
+    },
+    "existingAppServicePlanId": {
+      "value": "/subscriptions/{subscription-id}/resourceGroups/{rg-name}/providers/Microsoft.Web/serverfarms/{app-service-plan-name}"
+    },
+    "logAnalyticsWorkspaceName": {
+      "value": "my-log-analytics-workspace"
+    },
+    "storageAccountName": {
+      "value": "mylogicappstorage001"
+    },
+    "location": {
+      "value": "East US 2"
+    },
+    "storageContainerName": {
+      "value": "workflow-data"
+    },
+    "logAnalyticsRetentionDays": {
+      "value": 30
+    }
+  }
+}

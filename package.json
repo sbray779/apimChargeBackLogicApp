@@ -1,0 +1,38 @@
+{
+  "name": "azure-logicapp-workflow",
+  "version": "1.0.0",
+  "description": "Azure Logic App Standard workflow for Log Analytics data export",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'No build step required for Logic Apps'",
+    "start": "func start",
+    "deploy": "func azure functionapp publish",
+    "test": "echo 'No tests specified'",
+    "validate": "az deployment group validate --template-file deploy/azuredeploy.json --parameters @deploy/azuredeploy.parameters.json"
+  },
+  "keywords": [
+    "azure",
+    "logic-app",
+    "workflow",
+    "log-analytics",
+    "storage",
+    "automation"
+  ],
+  "author": "Azure Developer",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "azure-functions-core-tools": "^4.0.5000"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/azure-logicapp-workflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/azure-logicapp-workflow/issues"
+  },
+  "homepage": "https://github.com/your-org/azure-logicapp-workflow#readme"
+}
