@@ -1,25 +1,69 @@
-# Deploy Azure Logic App with Log Analytics and Storage
+# Deploy Azure Logic App for API Management Token Usage Reporting
 
 This repository contains the ARM templates and Logic App workflows to deploy a solution that:
-- Connects to a Log Analytics workspace
-- Stores results in a General Purpose v2 Storage Account
-- Uses an existing App Service Plan
+- Connects to a Log Analytics workspace to query API Management gateway logs
+- Extracts token usage data from API Management LLM gateway logs
+- Stores chargeback reports in a General Purpose v2 Storage Account
+- Uses an existing App Service Plan for the Logic App deployment
 - Implements security best practices with Managed Identity
 
 ## Architecture
 
 The solution includes:
 - **Logic App (Standard)**: Workflow engine hosted on an existing App Service Plan
-- **Log Analytics Workspace**: For querying and analyzing log data
-- **Storage Account (GPv2)**: For storing workflow results as CSV files
+- **Log Analytics Workspace**: For querying and analyzing API Management gateway logs
+- **Storage Account (GPv2)**: For storing token usage reports as CSV files
 - **API Connections**: Secure connections using Managed Identity
-- **Blob Container**: Dedicated container for workflow data
+- **Blob Container**: Dedicated container for chargeback report data
 
 ## Prerequisites
 
+### Azure Resources
 - Azure subscription with appropriate permissions
-- Existing App Service Plan (Premium or higher recommended for Logic Apps Standard)
+- **Existing App Service Plan** (Premium or higher recommended for Logic Apps Standard)
 - Resource group for deployment
+
+### API Management Requirements
+The deployment is designed to work with an existing API Management instance that has been configured for AI services token tracking:
+
+1. **API Management Instance**: Must be integrated with AI services (OpenAI, Azure OpenAI, etc.)
+2. **Gateway Logging**: API Gateway logging must be enabled on the API Management service
+3. **LLM Gateway Logging**: LLM Gateway logging must be enabled to capture token usage data
+4. **Diagnostic Settings**: A diagnostic setting must be configured on the API Management instance to send the following logs to the Log Analytics workspace tables created by this deployment:
+   - `ApiManagementGatewayLogs`
+   - `ApiManagementGatewayLlmLog`
+
+### Required API Management Configuration
+
+Before deploying this solution, ensure your API Management instance is configured as follows:
+
+#### 1. Enable Gateway Logging
+In your API Management instance:
+- Navigate to **Monitoring** > **Diagnostic settings**
+- Enable logging for gateway operations
+
+#### 2. Enable LLM Gateway Logging
+- Ensure LLM gateway logging is enabled to capture token usage
+- This captures prompt tokens, completion tokens, and total tokens per request
+
+#### 3. Configure Diagnostic Settings
+Create a diagnostic setting that sends logs to your Log Analytics workspace:
+- Log categories to enable:
+  - `ApiManagementGatewayLogs`
+  - `ApiManagementGatewayLlmLog`
+- Destination: Send to Log Analytics workspace (created by this deployment)
+
+#### 4. Enable logging of requests and responses for LLM API
+    https://learn.microsoft.com/en-us/azure/api-management/api-management-howto-llm-logs
+
+#### 5. Verify Log Data
+Ensure your API Management instance is generating the required log data with fields:
+- `CorrelationId`
+- `SequenceNumber`
+- `IsRequestSuccess`
+- `TraceRecords` (containing client ID information)
+- `PromptTokens`, `CompletionTokens`, `TotalTokens`
+- `ModelName`, `Region`, `CallerIpAddress`, etc.
 
 ## Deployment
 
@@ -90,11 +134,23 @@ The following app settings are configured automatically:
 
 #### Modify the KQL Query
 
-Edit the query in `workflow/workflows.json` under the `Run_query_and_list_results` action:
+The default query extracts token usage data from API Management logs. Edit the query in `workflow/workflows.json` under the `Run_query_and_list_results` action:
 
-```json
-"body": "YourCustomKQLQuery\n| where TimeGenerated >= ago(24h)\n| project Column1, Column2, Column3"
+```kql
+ApiManagementGatewayLogs 
+| join ApiManagementGatewayLlmLog on CorrelationId
+| where SequenceNumber == 0 and IsRequestSuccess == true
+| mv-expand TraceRecords
+| extend messageRaw = tostring(TraceRecords["message"])
+| extend clientID = trim("ClientID:", messageRaw)
+| project TimeGenerated, clientID, Region, CallerIpAddress, Cache, ProductId, BackendId, PromptTokens, CompletionTokens, TotalTokens, ModelName
 ```
+
+You can customize this query to:
+- Filter by specific time ranges
+- Add additional fields for reporting
+- Modify client ID extraction logic
+- Include/exclude specific products or backends
 
 #### Change Schedule
 
